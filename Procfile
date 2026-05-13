@@ -1,1 +1,1 @@
-worker: python connect.py
+web: python server.py

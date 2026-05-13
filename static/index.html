@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>N-able Cove Monitor — Terminal</title>
+<!-- xterm.js — mesmo engine do terminal do VS Code -->
+<link  href="https://cdnjs.cloudflare.com/ajax/libs/xterm/5.3.0/xterm.min.css" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/5.3.0/xterm.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xterm/5.3.0/addon-fit/addon-fit.min.js"></script>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:#0a0c0f;font-family:monospace;overflow:hidden}
+
+  /* ── Tela de login ─────────────────────────────── */
+  #login{
+    position:fixed;inset:0;background:#0a0c0f;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    z-index:100;gap:1rem;
+  }
+  #login.hide{display:none}
+  #login-box{
+    border:1px solid #1e3a1e;padding:2rem 2.5rem;
+    background:#0f1318;min-width:320px;
+  }
+  #login h2{
+    color:#00ff41;font-size:1rem;letter-spacing:.2em;
+    margin-bottom:1.5rem;text-align:center;
+    text-shadow:0 0 10px #00ff41;font-family:monospace;
+  }
+  #login label{color:#3d6b3d;font-size:.75rem;letter-spacing:.15em;display:block;margin-bottom:.4rem}
+  #login input{
+    width:100%;background:#0a0c0f;border:1px solid #1e3a1e;
+    color:#c8ffc8;padding:.5rem .8rem;font-family:monospace;
+    font-size:.9rem;outline:none;margin-bottom:1rem;
+  }
+  #login input:focus{border-color:#00ff41;box-shadow:0 0 6px #003310}
+  #login button{
+    width:100%;background:#003310;border:1px solid #00ff41;
+    color:#00ff41;padding:.6rem;font-family:monospace;font-size:.85rem;
+    letter-spacing:.2em;cursor:pointer;transition:all .2s;
+  }
+  #login button:hover{background:#00ff41;color:#0a0c0f}
+  #login-err{color:#ff3333;font-size:.75rem;text-align:center;min-height:1rem}
+  .logo-txt{
+    color:#00ff41;font-size:clamp(.7rem,2vw,1rem);letter-spacing:.3em;
+    text-align:center;margin-bottom:1.5rem;font-family:monospace;
+    text-shadow:0 0 15px #00ff41;
+  }
+
+  /* ── Terminal ──────────────────────────────────── */
+  #term-wrap{
+    position:fixed;inset:0;display:flex;flex-direction:column;
+    background:#0a0c0f;
+  }
+  #topbar{
+    height:32px;background:#0f1318;border-bottom:1px solid #1e2d1e;
+    display:flex;align-items:center;padding:0 1rem;gap:1rem;flex-shrink:0;
+  }
+  #topbar-title{color:#00ff41;font-size:.75rem;letter-spacing:.2em;
+    text-shadow:0 0 8px #00ff41}
+  #topbar-clock{color:#00e5ff;font-size:.7rem;margin-left:auto}
+  #btn-reconnect{
+    background:transparent;border:1px solid #1e2d1e;color:#3d6b3d;
+    padding:.2rem .6rem;font-family:monospace;font-size:.7rem;cursor:pointer;
+    transition:all .2s;letter-spacing:.1em;
+  }
+  #btn-reconnect:hover{border-color:#00ff41;color:#00ff41}
+  #conn-status{font-size:.7rem;letter-spacing:.1em}
+  #conn-status.on{color:#00ff41}
+  #conn-status.off{color:#ff3333}
+  #terminal{flex:1;padding:4px 8px;overflow:hidden}
+
+  /* Scan lines */
+  #term-wrap::after{
+    content:'';position:fixed;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(0deg,transparent,transparent 2px,
+      rgba(0,0,0,.08) 2px,rgba(0,0,0,.08) 4px);
+  }
+</style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="login">
+  <div class="logo-txt">N-ABLE COVE // MONITOR // TRUST IT</div>
+  <div id="login-box">
+    <h2>[ AUTENTICAÇÃO ]</h2>
+    <label>SENHA DE ACESSO</label>
+    <input type="password" id="pwd" placeholder="••••••••"
+           onkeydown="if(event.key==='Enter')doLogin()">
+    <button onclick="doLogin()">▶ ENTRAR</button>
+    <div id="login-err"></div>
+  </div>
+</div>
+
+<!-- Terminal -->
+<div id="term-wrap">
+  <div id="topbar">
+    <span id="topbar-title">⬛ N-ABLE COVE MONITOR</span>
+    <span id="conn-status" class="off">● DESCONECTADO</span>
+    <span id="topbar-clock"></span>
+    <button id="btn-reconnect" onclick="reconnect()">⟳ RECONECTAR</button>
+  </div>
+  <div id="terminal"></div>
+</div>
+
+<script>
+const WS_URL = `${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`;
+let term, fitAddon, ws, password='', reconnectTimer=null;
+
+// ── Relógio ────────────────────────────────────────
+setInterval(()=>{
+  document.getElementById('topbar-clock').textContent=
+    new Date().toLocaleTimeString('pt-BR');
+},1000);
+
+// ── Inicializa xterm.js ────────────────────────────
+function initTerm(){
+  const FitAddon = window.FitAddon?.FitAddon || window['FitAddon']?.FitAddon;
+
+  term = new Terminal({
+    cursorBlink:      true,
+    cursorStyle:      'block',
+    fontFamily:       "'Cascadia Code', 'Fira Code', 'Courier New', monospace",
+    fontSize:         13,
+    lineHeight:       1.3,
+    theme:{
+      background:     '#0a0c0f',
+      foreground:     '#c8ffc8',
+      cursor:         '#00ff41',
+      cursorAccent:   '#0a0c0f',
+      selectionBackground: 'rgba(0,255,65,.2)',
+      black:          '#0a0c0f',
+      red:            '#ff3333',
+      green:          '#00cc33',
+      yellow:         '#ffb300',
+      blue:           '#00e5ff',
+      magenta:        '#ff66ff',
+      cyan:           '#00ffcc',
+      white:          '#c8ffc8',
+      brightBlack:    '#3a4a3a',
+      brightRed:      '#ff6666',
+      brightGreen:    '#00ff41',
+      brightYellow:   '#ffd54f',
+      brightBlue:     '#40c4ff',
+      brightMagenta:  '#ff80ff',
+      brightCyan:     '#00ffe5',
+      brightWhite:    '#ffffff',
+    },
+    allowTransparency: true,
+    scrollback:       5000,
+  });
+
+  // Fit addon — ajusta tamanho ao container
+  fitAddon = new (window.FitAddon?.FitAddon || window['addon-fit']?.FitAddon ||
+    class{ fit(){} activate(t){} })();
+  try{
+    term.loadAddon(fitAddon);
+  }catch(e){}
+
+  term.open(document.getElementById('terminal'));
+  try{ fitAddon.fit(); }catch(e){}
+
+  // Resize
+  window.addEventListener('resize', ()=>{
+    try{
+      fitAddon.fit();
+      if(ws && ws.readyState===WebSocket.OPEN){
+        ws.send(`RESIZE:${term.cols}:${term.rows}`);
+      }
+    }catch(e){}
+  });
+
+  // Teclado → servidor
+  term.onData(data=>{
+    if(ws && ws.readyState===WebSocket.OPEN){
+      ws.send(data);
+    }
+  });
+}
+
+// ── Login ─────────────────────────────────────────
+function doLogin(){
+  const pwd = document.getElementById('pwd').value.trim();
+  if(!pwd){
+    document.getElementById('login-err').textContent='Digite a senha.';
+    return;
+  }
+  password = pwd;
+  document.getElementById('login').classList.add('hide');
+  connect();
+}
+
+// ── WebSocket ─────────────────────────────────────
+function connect(){
+  if(!term) initTerm();
+  term.clear();
+  setStatus(false);
+
+  ws = new WebSocket(WS_URL);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = ()=>{
+    setStatus(true);
+    // Envia senha para autenticação
+    ws.send(password);
+    // Envia tamanho do terminal
+    try{
+      fitAddon.fit();
+      ws.send(`RESIZE:${term.cols}:${term.rows}`);
+    }catch(e){}
+    clearTimeout(reconnectTimer);
+  };
+
+  ws.onmessage = e=>{
+    if(typeof e.data === 'string'){
+      term.write(e.data);
+    } else {
+      // Binary
+      term.write(new Uint8Array(e.data));
+    }
+  };
+
+  ws.onerror = ()=>{
+    term.write('\r\n\x1b[31m[ERRO DE CONEXÃO]\x1b[0m\r\n');
+    setStatus(false);
+  };
+
+  ws.onclose = ()=>{
+    setStatus(false);
+    term.write('\r\n\x1b[33m[CONEXÃO ENCERRADA — reconectando em 5s...]\x1b[0m\r\n');
+    // Auto-reconecta após 5s
+    reconnectTimer = setTimeout(()=>{
+      if(password) connect();
+    }, 5000);
+  };
+}
+
+function reconnect(){
+  clearTimeout(reconnectTimer);
+  if(ws){ try{ ws.close(); }catch(e){} }
+  if(password) connect();
+  else{
+    document.getElementById('login').classList.remove('hide');
+    document.getElementById('pwd').value='';
+  }
+}
+
+function setStatus(on){
+  const el = document.getElementById('conn-status');
+  el.textContent = on ? '● CONECTADO' : '● DESCONECTADO';
+  el.className   = on ? 'on' : 'off';
+}
+</script>
+</body>
+</html>
