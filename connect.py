@@ -5,10 +5,10 @@ import os
 import threading
 # msvcrt importado condicionalmente abaixo quando necessário
 
-PARTNER  = "*"
-USERNAME = "*"
-PASSWORD = "*"
-URL      = "*"
+PARTNER  = os.getenv("NABLE_PARTNER")
+USERNAME = os.getenv("NABLE_USERNAME")
+PASSWORD = os.getenv("NABLE_PASSWORD")
+URL = os.getenv("NABLE_URL")
 
 TEMPO_CRITICO = 480
 TEMPO_NORMAL  = 330
