@@ -5,10 +5,10 @@ import os
 import threading
 # msvcrt importado condicionalmente abaixo quando necessário
 
-PARTNER  = os.getenv("NABLE_PARTNER")
-USERNAME = os.getenv("NABLE_USERNAME")
-PASSWORD = os.getenv("NABLE_PASSWORD")
-URL = os.getenv("NABLE_URL")
+PARTNER  = "Trust IT (claudiney.alves@confiancaetecnologia.com.br)"
+USERNAME = "Trust"
+PASSWORD = "jHe%8R49B1ng#&Ql?7^#p8go"
+URL      = "https://api.backup.management/jsonapi"
 
 TEMPO_CRITICO = 480
 TEMPO_NORMAL  = 330
@@ -422,26 +422,14 @@ def countdown_com_pesquisa(seg, idx, total, tem_erro, dispositivos):
     """
     tecla_p = [False]
 
-    if os.name == "nt":
-        # Windows: polling não-bloqueante via msvcrt
-        import msvcrt
-        def verificar_tecla():
-            while not tecla_p[0]:
-                if msvcrt.kbhit():
-                    ch = msvcrt.getwch()
-                    if ch.lower() == "p":
-                        tecla_p[0] = True
-                time.sleep(0.1)
-        t = threading.Thread(target=verificar_tecla, daemon=True)
-        t.start()
-    else:
-        # Linux/Mac: thread com input()
-        def ouvir():
-            try:
-                if input().strip().lower() == "p":
-                    tecla_p[0] = True
-            except: pass
-        threading.Thread(target=ouvir, daemon=True).start()
+    # Cross-platform: thread com input() funciona em Windows e Linux
+    def ouvir():
+        try:
+            entrada = input()
+            if entrada.strip().lower() == "p":
+                tecla_p[0] = True
+        except: pass
+    threading.Thread(target=ouvir, daemon=True).start()
 
     icone = "🔴" if tem_erro else "🟢"
     m_tot, s_tot = divmod(seg, 60)
@@ -1252,7 +1240,7 @@ def tela_resumo(dispositivos):
         time.sleep(0.006)
     print()
 
-    hint = "P = pesquisar" if os.name=="nt" else "P+ENTER = pesquisar"
+    hint = "P + ENTER = pesquisar"
     print(f"   [{hint}]   [Ctrl+C = encerrar e salvar log]")
     print()
 
@@ -1323,7 +1311,7 @@ def exibir(dev, idx, total, rodada, tem_erro):
                       f"{fontes_and} ainda rodando")
 
     print(tag_linha)
-    hint = "P = pesquisar" if os.name=="nt" else "P+ENTER = pesquisar"
+    hint = "P + ENTER = pesquisar"
     print(f"   [{hint}]")
     topo("─")
 
@@ -1484,7 +1472,7 @@ def exibir(dev, idx, total, rodada, tem_erro):
 # ── Utilitários extras ───────────────────────────────────────────────────────
 
 def beep_critico():
-    """Beep sonoro no Windows quando há dispositivo crítico."""
+    """Beep sonoro — só no Windows."""
     if os.name == "nt":
         try:
             import winsound
@@ -1492,6 +1480,7 @@ def beep_critico():
             time.sleep(0.1)
             winsound.Beep(880, 200)
         except: pass
+    # Linux: sem beep (terminal web não suporta)
 
 def sparkline_7dias(barra):
     """Retorna mini linha dos últimos 7 dias para a tela de resumo."""
